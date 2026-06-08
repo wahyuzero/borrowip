@@ -98,17 +98,38 @@ def borrowip_check_ip(key: str = "") -> str:
         return "❌ No proxy available. Connect your phone first."
 
     try:
-        body = fetch_via_socks(client["socks_port"], "http://httpbin.org/ip")
+        # Try multiple IP check services as fallback
+        ip = None
+        for check_url in [
+            "https://api.ipify.org",
+            "https://api64.ipify.org",
+            "https://icanhazip.com",
+            "http://httpbin.org/ip",
+        ]:
+            try:
+                body = fetch_via_socks(client["socks_port"], check_url, timeout=15)
+                # Parse response
+                try:
+                    ip_data = json.loads(body)
+                    ip = ip_data.get("origin", body.strip())
+                except (json.JSONDecodeError, KeyError):
+                    ip = body.strip()
+                if ip:
+                    break
+            except Exception:
+                continue
+
+        if not ip:
+            return "❌ Could not determine proxy IP (all check services failed)"
+
         # Update stored IP
         try:
-            ip_data = json.loads(body)
-            ip = ip_data.get("origin", body.strip())
             client["ip"] = ip
             (DATA_DIR / "clients" / f"{client['code']}.json").write_text(
                 json.dumps(client)
             )
-        except (json.JSONDecodeError, KeyError):
-            ip = body.strip()
+        except OSError:
+            pass
         return f"✅ Proxy IP: {ip}"
     except Exception as e:
         return f"❌ Check failed: {e}"

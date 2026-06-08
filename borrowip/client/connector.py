@@ -1,5 +1,9 @@
 """Main client connector — orchestrates proxy + tunnel + registration."""
 
+import json
+import os
+import re
+import signal
 import subprocess
 import sys
 import time
@@ -7,6 +11,19 @@ import time
 from .codegen import generate_code
 from .proxy import SocksProxy
 from .tunnel import SSHTunnel
+
+# Valid pair code: BIP-xxxxxx (6 alphanumeric chars)
+CODE_RE = re.compile(r'^BIP-[a-z0-9]{6}$')
+
+
+def _validate_code(code: str) -> str:
+    """Validate pair code format to prevent shell injection."""
+    if not CODE_RE.match(code):
+        raise ValueError(
+            f"Invalid code format: {code!r}. "
+            "Expected format: BIP-xxxxxx (6 alphanumeric chars)"
+        )
+    return code
 
 
 def connect(
@@ -28,19 +45,21 @@ def connect(
         ssh_key: Path to SSH key
         ssh_port: SSH port
         local_port: Local SOCKS proxy port
-        remote_port: Remote port (0 = auto 10001)
+        remote_port: Remote port (0 = auto-detect from VPS)
     """
     if not code:
         code = generate_code()
-
-    if remote_port == 0:
-        remote_port = 10001
+    _validate_code(code)
 
     if not ssh_key:
         ssh_key = _find_ssh_key()
         if not ssh_key:
             print("❌ No SSH key found. Use --key or run: ssh-keygen")
             sys.exit(1)
+
+    # Auto-detect remote port from VPS if not specified
+    if remote_port == 0:
+        remote_port = _find_free_remote_port(host, ssh_user, ssh_key, ssh_port)
 
     print(f"🔗 BorrowIP — Connecting to {host}")
     print(f"   Code: {code}")
@@ -69,6 +88,7 @@ def connect(
 
     while True:
         try:
+            tunnel.stop()  # cleanup any previous process
             tunnel.connect()
             print("✅ SSH tunnel established!")
 
@@ -107,8 +127,6 @@ def connect(
 
 def _find_ssh_key() -> str:
     """Find SSH key in common locations."""
-    import os
-
     home = os.path.expanduser("~")
     candidates = [
         os.path.join(home, ".ssh", "id_ed25519"),
@@ -120,12 +138,60 @@ def _find_ssh_key() -> str:
     return ""
 
 
+def _find_free_remote_port(host, user, key, ssh_port) -> int:
+    """Query VPS for next available remote port."""
+    # Default range: 10001-10010
+    remote_cmd = (
+        "python3 -c \""
+        "from pathlib import Path;"
+        "import json;"
+        "d=Path('/tmp/.borrowip/clients');"
+        "used=set();"
+        "[used.add(json.loads(f.read_text()).get('socks_port',0)) "
+        "for f in d.glob('*.json')] if d.exists() else None;"
+        "p=10001;"
+        "[print(p) if p not in used else None "
+        "for p in range(10001,10011)]"
+        "\" 2>/dev/null | head -1"
+    )
+    # Fallback: just use ss to find used ports
+    remote_cmd = (
+        "ports=$(ss -tlnp 2>/dev/null | grep -oP '127.0.0.1:\\K[0-9]+' | sort -un); "
+        "for p in $(seq 10001 10010); do "
+        "echo $ports | grep -qw $p || { echo $p; break; }; "
+        "done"
+    )
+    cmd = [
+        "ssh", "-i", key, "-p", str(ssh_port),
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ConnectTimeout=10",
+        f"{user}@{host}",
+        remote_cmd,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.strip())
+    except Exception:
+        pass
+    return 10001  # fallback
+
+
 def _register_on_vps(host, user, key, ssh_port, code, remote_port):
     """Write registration file on VPS via SSH."""
-    payload = f'{{"code":"{code}","socks_port":{remote_port},"registered_at":{int(time.time())}}}'
+    # Validate code to prevent shell injection
+    _validate_code(code)
+
+    payload = json.dumps({
+        "code": code,
+        "socks_port": remote_port,
+        "registered_at": int(time.time()),
+    })
     remote_cmd = (
         f"mkdir -p /tmp/.borrowip/clients && "
-        f"echo '{payload}' > /tmp/.borrowip/clients/{code}.json"
+        f"cat > /tmp/.borrowip/clients/{code}.json << 'BIPJSON'\n"
+        f"{payload}\n"
+        f"BIPJSON"
     )
     cmd = [
         "ssh",

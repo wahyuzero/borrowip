@@ -15,7 +15,7 @@ class SocksProxy:
     def start(self) -> bool:
         """Start pproxy SOCKS5 server. Raises if it fails."""
         self._proc = subprocess.Popen(
-            ["pproxy", "-l", f"socks5://0.0.0.0:{self.port}"],
+            ["pproxy", "-l", f"socks5://127.0.0.1:{self.port}"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )

@@ -1,6 +1,8 @@
 """Proxy pool — manages connected proxy clients via filesystem."""
 
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -13,6 +15,23 @@ class ProxyPool:
         self.clients_dir = data_dir / "clients"
         self.clients_dir.mkdir(parents=True, exist_ok=True)
 
+    def _atomic_write(self, path: Path, data: str):
+        """Write file atomically to prevent corruption."""
+        fd, tmp = tempfile.mkstemp(
+            dir=self.clients_dir, suffix=".tmp", prefix=".bip-"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(data)
+            os.rename(tmp, path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
     def register(self, code: str, socks_port: int) -> dict:
         """Register a new client (usually called by the client via SSH)."""
         client = {
@@ -21,7 +40,9 @@ class ProxyPool:
             "registered_at": int(time.time()),
             "ip": "",
         }
-        (self.clients_dir / f"{code}.json").write_text(json.dumps(client))
+        self._atomic_write(
+            self.clients_dir / f"{code}.json", json.dumps(client)
+        )
         return client
 
     def unregister(self, code: str):

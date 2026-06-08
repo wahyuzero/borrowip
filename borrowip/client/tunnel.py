@@ -1,5 +1,7 @@
 """SSH reverse tunnel management."""
 
+import os
+import signal
 import subprocess
 import time
 
@@ -42,8 +44,25 @@ class SSHTunnel:
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            preexec_fn=os.setsid,  # new process group for clean kill
         )
-        time.sleep(2)
+        # Wait for SSH to establish or fail
+        for _ in range(10):
+            time.sleep(0.5)
+            if self._proc.poll() is not None:
+                stderr = self._proc.stderr.read().decode()
+                raise RuntimeError(f"SSH tunnel failed: {stderr}")
+            # Check if remote port is listening (tunnel ready)
+            try:
+                import socket
+                s = socket.socket()
+                s.settimeout(1)
+                # Can't directly check remote port from client,
+                # just check that SSH is still running after 2s
+                s.close()
+            except Exception:
+                pass
+        # Final check
         if self._proc.poll() is not None:
             stderr = self._proc.stderr.read().decode()
             raise RuntimeError(f"SSH tunnel failed: {stderr}")
@@ -55,12 +74,21 @@ class SSHTunnel:
         return -1
 
     def stop(self):
+        """Kill SSH tunnel and all child processes."""
         if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
+            try:
+                # Kill entire process group
+                os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                self._proc.terminate()
             try:
                 self._proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self._proc.kill()
+                try:
+                    os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    self._proc.kill()
+        self._proc = None
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None

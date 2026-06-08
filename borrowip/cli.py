@@ -101,6 +101,14 @@ def _handle_connect(args):
         print("   Or run: borrowip init")
         sys.exit(1)
 
+    if not user:
+        print("❌ No SSH user specified. Use --user or run: borrowip init")
+        sys.exit(1)
+
+    if not ssh_key:
+        print("❌ No SSH key specified. Use --key or run: borrowip init")
+        sys.exit(1)
+
     connect(
         host=host,
         code=code,
