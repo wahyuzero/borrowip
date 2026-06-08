@@ -22,7 +22,6 @@ borrowip connect            borrowip-mcp             Hermes/Claude
 ### 1. VPS: Install & configure AI agent
 
 ```bash
-# From source (not on PyPI yet)
 git clone https://github.com/wahyuzero/borrowip
 cd borrowip && pip install -e .
 ```
@@ -37,13 +36,13 @@ mcp_servers:
 
 When AI agent starts, ask: *"check borrowip status"* → shows your pair code.
 
-### 2. Phone (Termux): Connect
+### 2. Phone (Termux): Install & connect
 
 ```bash
-# Quick install
+# Install
 curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
 
-# Setup (first time only)
+# Setup (first time only) — choose key or password auth
 borrowip init
 
 # Connect using pair code from VPS
@@ -78,7 +77,7 @@ All traffic flows through SSH port 22 — no extra firewall rules.
 
 **VPS:** Python 3.10+, SSH on port 22, AI agent with MCP support (Hermes, Claude, Cursor, etc.)
 
-**Phone:** Android + Termux, Python 3.10+, `pip install pproxy`, SSH key for VPS access
+**Phone:** Android + Termux, Python 3.10+, pproxy (`pip install pproxy`), SSH access to VPS (key or password)
 
 ## Installation
 
@@ -90,7 +89,7 @@ cd borrowip && pip install -e .
 
 ### Termux
 ```bash
-# Quick install (auto handles deps)
+# Quick install
 curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
 
 # Or manual
@@ -110,31 +109,44 @@ mcp_servers:
 ```
 
 ### Termux (`~/.borrowip.toml`)
-Created by `borrowip init`:
+
+Created by `borrowip init`. Supports two auth methods:
+
+**Key auth:**
 ```toml
 [server]
 host = "your-vps-ip"
 user = "your-ssh-user"
 ssh_key = "~/.ssh/id_ed25519"
 ```
-Then just run `borrowip connect BIP-xxxx` (no host needed).
+
+**Password auth:**
+```toml
+[server]
+host = "your-vps-ip"
+user = "your-ssh-user"
+ssh_password = "your-password"
+```
+
+Then just run `borrowip connect` (reads config automatically).
 
 ## Auto-start (Termux)
 
 ```bash
 # Install Termux:Boot from F-Droid
 mkdir -p ~/.termux/boot/
-echo 'borrowip connect BIP-xxxx@your-vps-ip &' > ~/.termux/boot/start-borrowip.sh
+echo 'borrowip connect &' > ~/.termux/boot/start-borrowip.sh
 chmod +x ~/.termux/boot/start-borrowip.sh
 ```
 Tunnel auto-reconnects on drop.
 
 ## Security
 
-- SSH key auth (no passwords)
-- Pair code = identifier only; SSH key is the real auth
+- SSH key or password auth
+- Pair code = identifier only; SSH credentials are the real auth
 - All traffic encrypted via SSH
 - SOCKS proxy bound to 127.0.0.1 only (not exposed to WiFi)
+- Pair code validated (prevents shell injection)
 
 ## License
 
