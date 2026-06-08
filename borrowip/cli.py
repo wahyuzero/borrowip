@@ -20,8 +20,7 @@ def main():
     p_connect.add_argument("--code", "-c", default="", help="Pair code")
     p_connect.add_argument("--host", help="VPS hostname/IP")
     p_connect.add_argument("--user", "-u", default="", help="SSH user")
-    p_connect.add_argument("--key", "-i", default="", help="SSH key path")
-    p_connect.add_argument("--password", "-P", default="", help="SSH password (alternative to key)")
+    p_connect.add_argument("--key", "-i", default="", help="SSH key path (override config)")
     p_connect.add_argument("--port", "-p", type=int, default=22, help="SSH port")
     p_connect.add_argument(
         "--local-port", type=int, default=1080, help="Local SOCKS port"
@@ -78,6 +77,7 @@ def _handle_connect(args):
     host = args.host or ""
     user = args.user
     ssh_key = args.key
+    ssh_password = ""
 
     # Parse target: BIP-xxxx@host or just host
     if args.target:
@@ -89,13 +89,12 @@ def _handle_connect(args):
             host = host or args.target
 
     # Fall back to config file
-    if not host or not user or (not ssh_key and not args.password):
-        config = _load_config()
-        server = config.get("server", {})
-        host = host or server.get("host", "")
-        user = user or server.get("user", "root")
-        ssh_key = ssh_key or server.get("ssh_key", "")
-        args.password = args.password or server.get("ssh_password", "")
+    config = _load_config()
+    server = config.get("server", {})
+    host = host or server.get("host", "")
+    user = user or server.get("user", "root")
+    ssh_key = ssh_key or server.get("ssh_key", "")
+    ssh_password = server.get("ssh_password", "")
 
     if not host:
         print("❌ No host specified.")
@@ -104,11 +103,11 @@ def _handle_connect(args):
         sys.exit(1)
 
     if not user:
-        print("❌ No SSH user specified. Use --user or run: borrowip init")
+        print("❌ No SSH user specified. Run: borrowip init")
         sys.exit(1)
 
-    if not ssh_key and not args.password:
-        print("❌ No SSH key or password specified. Use --key, --password, or run: borrowip init")
+    if not ssh_key and not ssh_password:
+        print("❌ No SSH key or password configured. Run: borrowip init")
         sys.exit(1)
 
     connect(
@@ -116,7 +115,7 @@ def _handle_connect(args):
         code=code,
         ssh_user=user,
         ssh_key=ssh_key,
-        ssh_password=args.password,
+        ssh_password=ssh_password,
         ssh_port=args.port,
         local_port=args.local_port,
         remote_port=args.remote_port,
