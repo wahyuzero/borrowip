@@ -12,8 +12,8 @@ pkg update -y
 # Install dependencies
 pkg install openssh python -y
 
-# Install borrowip
-pip install borrowip[client]
+# Install borrowip from local source
+pip install -e ".[client]"
 
 echo ""
 echo "✅ BorrowIP installed!"
