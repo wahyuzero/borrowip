@@ -31,6 +31,7 @@ def connect(
     code: str = "",
     ssh_user: str = "root",
     ssh_key: str = "",
+    ssh_password: str = "",
     ssh_port: int = 22,
     local_port: int = 1080,
     remote_port: int = 0,
@@ -42,7 +43,8 @@ def connect(
         host: VPS IP or hostname
         code: Pair code from VPS (auto-generated if empty)
         ssh_user: SSH username
-        ssh_key: Path to SSH key
+        ssh_key: Path to SSH key (optional if using password)
+        ssh_password: SSH password (optional if using key)
         ssh_port: SSH port
         local_port: Local SOCKS proxy port
         remote_port: Remote port (0 = auto-detect from VPS)
@@ -51,19 +53,20 @@ def connect(
         code = generate_code()
     _validate_code(code)
 
-    if not ssh_key:
+    if not ssh_key and not ssh_password:
         ssh_key = _find_ssh_key()
         if not ssh_key:
-            print("❌ No SSH key found. Use --key or run: ssh-keygen")
+            print("❌ No SSH key or password provided. Use --key, --password, or run: ssh-keygen")
             sys.exit(1)
 
     # Auto-detect remote port from VPS if not specified
     if remote_port == 0:
-        remote_port = _find_free_remote_port(host, ssh_user, ssh_key, ssh_port)
+        remote_port = _find_free_remote_port(host, ssh_user, ssh_key, ssh_password, ssh_port)
 
     print(f"🔗 BorrowIP — Connecting to {host}")
     print(f"   Code: {code}")
-    print(f"   SSH: {ssh_user}@{host}:{ssh_port}")
+    auth = "key" if ssh_key else "password"
+    print(f"   SSH: {ssh_user}@{host}:{ssh_port} (auth: {auth})")
     print(f"   SOCKS: local:{local_port} → remote:{remote_port}")
 
     # Start local SOCKS proxy
@@ -81,6 +84,7 @@ def connect(
         host=host,
         user=ssh_user,
         ssh_key=ssh_key,
+        ssh_password=ssh_password,
         ssh_port=ssh_port,
         local_port=local_port,
         remote_port=remote_port,
@@ -138,36 +142,16 @@ def _find_ssh_key() -> str:
     return ""
 
 
-def _find_free_remote_port(host, user, key, ssh_port) -> int:
+def _find_free_remote_port(host, user, key, password, ssh_port) -> int:
     """Query VPS for next available remote port."""
     # Default range: 10001-10010
     remote_cmd = (
-        "python3 -c \""
-        "from pathlib import Path;"
-        "import json;"
-        "d=Path('/tmp/.borrowip/clients');"
-        "used=set();"
-        "[used.add(json.loads(f.read_text()).get('socks_port',0)) "
-        "for f in d.glob('*.json')] if d.exists() else None;"
-        "p=10001;"
-        "[print(p) if p not in used else None "
-        "for p in range(10001,10011)]"
-        "\" 2>/dev/null | head -1"
-    )
-    # Fallback: just use ss to find used ports
-    remote_cmd = (
-        "ports=$(ss -tlnp 2>/dev/null | grep -oP '127.0.0.1:\\K[0-9]+' | sort -un); "
+        "ports=$(ss -tlnp 2>/dev/null | grep -oP '127.0.0.1:\\\\K[0-9]+' | sort -un); "
         "for p in $(seq 10001 10010); do "
         "echo $ports | grep -qw $p || { echo $p; break; }; "
         "done"
     )
-    cmd = [
-        "ssh", "-i", key, "-p", str(ssh_port),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "ConnectTimeout=10",
-        f"{user}@{host}",
-        remote_cmd,
-    ]
+    cmd = _build_ssh_cmd(user, host, key, password, ssh_port, remote_cmd)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0 and result.stdout.strip():
@@ -177,7 +161,31 @@ def _find_free_remote_port(host, user, key, ssh_port) -> int:
     return 10001  # fallback
 
 
-def _register_on_vps(host, user, key, ssh_port, code, remote_port):
+def _build_ssh_cmd(user, host, key, password, ssh_port, remote_cmd):
+    """Build SSH command with key or password auth."""
+    if password:
+        # Use sshpass for password auth
+        return [
+            "sshpass", "-p", password,
+            "ssh", "-p", str(ssh_port),
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=10",
+            "-o", "PreferredAuthentications=password",
+            f"{user}@{host}",
+            remote_cmd,
+        ]
+    else:
+        # Key auth
+        return [
+            "ssh", "-i", key, "-p", str(ssh_port),
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=10",
+            f"{user}@{host}",
+            remote_cmd,
+        ]
+
+
+def _register_on_vps(host, user, key, password, ssh_port, code, remote_port):
     """Write registration file on VPS via SSH."""
     # Validate code to prevent shell injection
     _validate_code(code)
@@ -193,15 +201,7 @@ def _register_on_vps(host, user, key, ssh_port, code, remote_port):
         f"{payload}\n"
         f"BIPJSON"
     )
-    cmd = [
-        "ssh",
-        "-i", key,
-        "-p", str(ssh_port),
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "ConnectTimeout=10",
-        f"{user}@{host}",
-        remote_cmd,
-    ]
+    cmd = _build_ssh_cmd(user, host, key, password, ssh_port, remote_cmd)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     if result.returncode != 0:
         raise RuntimeError(f"Registration failed: {result.stderr.strip()}")

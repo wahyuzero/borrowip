@@ -17,29 +17,48 @@ class SSHTunnel:
         local_port: int,
         remote_port: int,
         ssh_port: int = 22,
+        ssh_password: str = "",
     ):
         self.host = host
         self.user = user
         self.ssh_key = ssh_key
+        self.ssh_password = ssh_password
         self.ssh_port = ssh_port
         self.local_port = local_port
         self.remote_port = remote_port
         self._proc = None
 
+    def _build_ssh_cmd(self):
+        """Build SSH command with key or password auth."""
+        if self.ssh_password:
+            return [
+                "sshpass", "-p", self.ssh_password,
+                "ssh", "-p", str(self.ssh_port),
+                "-R", f"127.0.0.1:{self.remote_port}:127.0.0.1:{self.local_port}",
+                "-N",
+                "-o", "ServerAliveInterval=30",
+                "-o", "ServerAliveCountMax=3",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ExitOnForwardFailure=yes",
+                "-o", "PreferredAuthentications=password",
+                f"{self.user}@{self.host}",
+            ]
+        else:
+            return [
+                "ssh", "-i", self.ssh_key,
+                "-p", str(self.ssh_port),
+                "-R", f"127.0.0.1:{self.remote_port}:127.0.0.1:{self.local_port}",
+                "-N",
+                "-o", "ServerAliveInterval=30",
+                "-o", "ServerAliveCountMax=3",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ExitOnForwardFailure=yes",
+                f"{self.user}@{self.host}",
+            ]
+
     def connect(self):
         """Start SSH reverse tunnel."""
-        cmd = [
-            "ssh",
-            "-i", self.ssh_key,
-            "-p", str(self.ssh_port),
-            "-R", f"127.0.0.1:{self.remote_port}:127.0.0.1:{self.local_port}",
-            "-N",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "ExitOnForwardFailure=yes",
-            f"{self.user}@{self.host}",
-        ]
+        cmd = self._build_ssh_cmd()
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -52,16 +71,6 @@ class SSHTunnel:
             if self._proc.poll() is not None:
                 stderr = self._proc.stderr.read().decode()
                 raise RuntimeError(f"SSH tunnel failed: {stderr}")
-            # Check if remote port is listening (tunnel ready)
-            try:
-                import socket
-                s = socket.socket()
-                s.settimeout(1)
-                # Can't directly check remote port from client,
-                # just check that SSH is still running after 2s
-                s.close()
-            except Exception:
-                pass
         # Final check
         if self._proc.poll() is not None:
             stderr = self._proc.stderr.read().decode()
