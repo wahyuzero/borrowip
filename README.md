@@ -1,20 +1,20 @@
 # BorrowIP 📡
 
-**Borrow mobile IP for AI agents** — route scraping traffic through your phone's cellular connection via SSH reverse tunnel.
+**Borrow mobile IP for AI agents** — route traffic through your phone's cellular connection via SSH reverse tunnel.
 
-Zero infrastructure. Uses existing SSH (port 22). Works with any AI agent that supports MCP.
+Zero infrastructure. Uses existing SSH (port 22). Works with any MCP-compatible AI agent.
 
 ## How it works
 
 ```
-📱 Termux (phone)              🖥️ VPS (any)              🤖 AI Agent
-────────────────               ─────────────              ──────────
-borrowip connect               borrowip-mcp               Hermes/Claude
-  BIP-xxxx@vps-ip               (auto-started)              ↓
-    │                               │                    borrowip_fetch()
-    ├── SSH :22 ───────────────→   SSH :22                   ↓
-    │  pproxy :1080               SOCKS5 :10001         → cellular IP
-    └── cellular ──→ internet ←─────┘
+📱 Phone (Termux)           🖥️ VPS                   🤖 AI Agent
+────────────────            ─────────                ──────────
+borrowip connect            borrowip-mcp             Hermes/Claude
+  BIP-xxxx@vps-ip             (auto-started)             ↓
+    │                             │                  borrowip_fetch()
+    ├── SSH :22 ──────────────→  SSH :22                ↓
+    │  pproxy :1080              SOCKS5 :10001       → cellular IP
+    └── cellular ──→ internet ←──┘
 ```
 
 ## Quick Start
@@ -22,7 +22,9 @@ borrowip connect               borrowip-mcp               Hermes/Claude
 ### 1. VPS: Install & configure AI agent
 
 ```bash
-pip install borrowip
+# From source (not on PyPI yet)
+git clone https://github.com/wahyuzero/borrowip
+cd borrowip && pip install -e .
 ```
 
 Add to your AI agent config (e.g. Hermes `config.yaml`):
@@ -33,12 +35,12 @@ mcp_servers:
     command: borrowip-mcp
 ```
 
-When AI agent starts, ask it: *"check borrowip status"* → it shows your pair code.
+When AI agent starts, ask: *"check borrowip status"* → shows your pair code.
 
 ### 2. Phone (Termux): Connect
 
 ```bash
-# One-line install
+# Quick install
 curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
 
 # Setup (first time only)
@@ -48,13 +50,13 @@ borrowip init
 borrowip connect BIP-xxxxxx@your-vps-ip
 ```
 
-### 3. Done! Ask your AI agent
+### 3. Done!
 
-```
+```text
 "Fetch https://example.com using borrowip key BIP-xxxxxx"
 ```
 
-The AI agent automatically routes traffic through your phone's cellular IP.
+AI agent routes traffic through your phone's cellular IP automatically.
 
 ## MCP Tools
 
@@ -67,71 +69,57 @@ The AI agent automatically routes traffic through your phone's cellular IP.
 
 ## Architecture
 
-**BorrowIP** uses your existing SSH server — no extra ports, no relay servers, no cloud services.
-
 - **MCP Server** (`borrowip-mcp`): Runs on VPS, auto-started by AI agent via stdio. Generates pair code, manages proxy connections.
-- **Client** (`borrowip connect`): Runs on Termux/phone. Starts local SOCKS5 proxy (pproxy), creates SSH reverse tunnel, registers with pair code.
+- **Client** (`borrowip connect`): Runs on Termux. Starts local SOCKS5 proxy (pproxy), creates SSH reverse tunnel, registers with pair code.
 
-All traffic flows through SSH port 22 → no additional firewall rules needed.
+All traffic flows through SSH port 22 — no extra firewall rules.
 
 ## Requirements
 
-**VPS (server):**
-- Python 3.10+
-- SSH server running on port 22
-- AI agent with MCP support (Hermes, Claude, Cursor, etc.)
+**VPS:** Python 3.10+, SSH on port 22, AI agent with MCP support (Hermes, Claude, Cursor, etc.)
 
-**Phone (client):**
-- Android with Termux
-- Python 3.10+ (install via Termux)
-- pproxy (`pip install pproxy`)
-- SSH key with access to VPS
+**Phone:** Android + Termux, Python 3.10+, `pip install pproxy`, SSH key for VPS access
 
 ## Installation
 
 ### VPS
-
 ```bash
-pip install borrowip
+git clone https://github.com/wahyuzero/borrowip
+cd borrowip && pip install -e .
 ```
 
 ### Termux
-
 ```bash
-# Quick install
+# Quick install (auto handles deps)
 curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
 
-# Or manually
+# Or manual
 pkg install openssh python
-pip install borrowip[client]
+pip install pproxy
+git clone https://github.com/wahyuzero/borrowip
+cd borrowip && pip install -e ".[client]"
 ```
 
 ## Configuration
 
-### VPS (Hermes config.yaml)
-
+### VPS (Hermes `config.yaml`)
 ```yaml
 mcp_servers:
   borrowip:
     command: borrowip-mcp
 ```
 
-### Termux (~/.borrowip.toml)
-
+### Termux (`~/.borrowip.toml`)
 Created by `borrowip init`:
-
 ```toml
 [server]
 host = "your-vps-ip"
-user = "root"
+user = "your-ssh-user"
 ssh_key = "~/.ssh/id_ed25519"
 ```
+Then just run `borrowip connect BIP-xxxx` (no host needed).
 
-After config, just run `borrowip connect BIP-xxxx` (no need to type host every time).
-
-## Auto-start
-
-### Termux (boot)
+## Auto-start (Termux)
 
 ```bash
 # Install Termux:Boot from F-Droid
@@ -139,15 +127,14 @@ mkdir -p ~/.termux/boot/
 echo 'borrowip connect BIP-xxxx@your-vps-ip &' > ~/.termux/boot/start-borrowip.sh
 chmod +x ~/.termux/boot/start-borrowip.sh
 ```
-
-The tunnel auto-reconnects if connection drops.
+Tunnel auto-reconnects on drop.
 
 ## Security
 
-- SSH key authentication (no passwords)
-- Pair code is just an identifier, not a secret — SSH key is the real auth
+- SSH key auth (no passwords)
+- Pair code = identifier only; SSH key is the real auth
 - All traffic encrypted via SSH
-- SOCKS proxy only accessible from VPS localhost (127.0.0.1)
+- SOCKS proxy bound to 127.0.0.1 only (not exposed to WiFi)
 
 ## License
 
