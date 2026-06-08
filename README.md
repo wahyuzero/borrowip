@@ -1,0 +1,154 @@
+# BorrowIP 📡
+
+**Borrow mobile IP for AI agents** — route scraping traffic through your phone's cellular connection via SSH reverse tunnel.
+
+Zero infrastructure. Uses existing SSH (port 22). Works with any AI agent that supports MCP.
+
+## How it works
+
+```
+📱 Termux (phone)              🖥️ VPS (any)              🤖 AI Agent
+────────────────               ─────────────              ──────────
+borrowip connect               borrowip-mcp               Hermes/Claude
+  BIP-xxxx@vps-ip               (auto-started)              ↓
+    │                               │                    borrowip_fetch()
+    ├── SSH :22 ───────────────→   SSH :22                   ↓
+    │  pproxy :1080               SOCKS5 :10001         → cellular IP
+    └── cellular ──→ internet ←─────┘
+```
+
+## Quick Start
+
+### 1. VPS: Install & configure AI agent
+
+```bash
+pip install borrowip
+```
+
+Add to your AI agent config (e.g. Hermes `config.yaml`):
+
+```yaml
+mcp_servers:
+  borrowip:
+    command: borrowip-mcp
+```
+
+When AI agent starts, ask it: *"check borrowip status"* → it shows your pair code.
+
+### 2. Phone (Termux): Connect
+
+```bash
+# One-line install
+curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
+
+# Setup (first time only)
+borrowip init
+
+# Connect using pair code from VPS
+borrowip connect BIP-xxxxxx@your-vps-ip
+```
+
+### 3. Done! Ask your AI agent
+
+```
+"Fetch https://example.com using borrowip key BIP-xxxxxx"
+```
+
+The AI agent automatically routes traffic through your phone's cellular IP.
+
+## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `borrowip_status()` | Show pair code & connected proxies |
+| `borrowip_fetch(url, key)` | Fetch URL through mobile proxy |
+| `borrowip_check_ip(key)` | Check proxy's external IP |
+| `borrowip_list_proxies()` | List all connected proxies |
+
+## Architecture
+
+**BorrowIP** uses your existing SSH server — no extra ports, no relay servers, no cloud services.
+
+- **MCP Server** (`borrowip-mcp`): Runs on VPS, auto-started by AI agent via stdio. Generates pair code, manages proxy connections.
+- **Client** (`borrowip connect`): Runs on Termux/phone. Starts local SOCKS5 proxy (pproxy), creates SSH reverse tunnel, registers with pair code.
+
+All traffic flows through SSH port 22 → no additional firewall rules needed.
+
+## Requirements
+
+**VPS (server):**
+- Python 3.10+
+- SSH server running on port 22
+- AI agent with MCP support (Hermes, Claude, Cursor, etc.)
+
+**Phone (client):**
+- Android with Termux
+- Python 3.10+ (install via Termux)
+- pproxy (`pip install pproxy`)
+- SSH key with access to VPS
+
+## Installation
+
+### VPS
+
+```bash
+pip install borrowip
+```
+
+### Termux
+
+```bash
+# Quick install
+curl -sL https://raw.githubusercontent.com/wahyuzero/borrowip/main/scripts/install-termux.sh | bash
+
+# Or manually
+pkg install openssh python
+pip install borrowip[client]
+```
+
+## Configuration
+
+### VPS (Hermes config.yaml)
+
+```yaml
+mcp_servers:
+  borrowip:
+    command: borrowip-mcp
+```
+
+### Termux (~/.borrowip.toml)
+
+Created by `borrowip init`:
+
+```toml
+[server]
+host = "your-vps-ip"
+user = "root"
+ssh_key = "~/.ssh/id_ed25519"
+```
+
+After config, just run `borrowip connect BIP-xxxx` (no need to type host every time).
+
+## Auto-start
+
+### Termux (boot)
+
+```bash
+# Install Termux:Boot from F-Droid
+mkdir -p ~/.termux/boot/
+echo 'borrowip connect BIP-xxxx@your-vps-ip &' > ~/.termux/boot/start-borrowip.sh
+chmod +x ~/.termux/boot/start-borrowip.sh
+```
+
+The tunnel auto-reconnects if connection drops.
+
+## Security
+
+- SSH key authentication (no passwords)
+- Pair code is just an identifier, not a secret — SSH key is the real auth
+- All traffic encrypted via SSH
+- SOCKS proxy only accessible from VPS localhost (127.0.0.1)
+
+## License
+
+MIT

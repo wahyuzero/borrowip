@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "borrowip"
+version = "0.1.0"
+description = "Borrow mobile IP for AI agents via SSH reverse tunnel + SOCKS proxy (MCP server)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.31.0",
+    "PySocks>=1.7.1",
+]
+
+[project.scripts]
+borrowip = "borrowip.cli:main"
+borrowip-mcp = "borrowip.server.mcp_server:main"
+
+[project.optional-dependencies]
+client = ["pproxy>=1.2.0"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["borrowip*"]
