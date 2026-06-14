@@ -1,6 +1,25 @@
-"""Fetch URL through SOCKS5 proxy."""
+"""Fetch URL through SOCKS5 proxy and check proxy liveness."""
+
+import socket
 
 import requests
+
+
+def check_proxy_alive(socks_port: int, timeout: float = 3.0) -> bool:
+    """Quick TCP check — is the SOCKS5 port open and accepting connections?
+
+    This is NOT a full proxy test. It just checks if something is listening.
+    Use fetch_via_socks() for a real end-to-end test.
+    """
+    if not (0 < socks_port <= 65535):
+        return False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(("127.0.0.1", socks_port))
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError, OverflowError, ValueError):
+        return False
 
 
 def fetch_via_socks(socks_port: int, url: str, timeout: int = 30, verify_ssl: bool = False) -> str:
@@ -32,7 +51,6 @@ def fetch_via_socks(socks_port: int, url: str, timeout: int = 30, verify_ssl: bo
             r.raise_for_status()
             return r.text
         except requests.exceptions.HTTPError as e:
-            # Return error body for non-2xx but with status info
             return f"HTTP {e.response.status_code}: {e.response.text}"
         except Exception as e:
             errors.append(f"{host}: {e}")

@@ -57,14 +57,25 @@ borrowip connect BIP-xxxxxx@your-vps-ip
 
 AI agent routes traffic through your phone's cellular IP automatically.
 
+## For AI Agents (LLM)
+
+**See [LLM_GUIDE.md](LLM_GUIDE.md)** for a complete reference written for AI agents.
+
+Quick summary of the 3-step workflow:
+1. `borrowip_status()` — check what's connected
+2. `borrowip_get_proxy()` — get the `socks5://` URL
+3. `borrowip_fetch(url)` or `browser_launch(proxy=<url>)` — use the proxy
+
 ## MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `borrowip_status()` | Show pair code & connected proxies |
-| `borrowip_fetch(url, key)` | Fetch URL through mobile proxy |
-| `borrowip_check_ip(key)` | Check proxy's external IP |
-| `borrowip_list_proxies()` | List all connected proxies |
+| Tool | Returns | Description |
+|------|---------|-------------|
+| `borrowip_status()` | Text | Pair code + connected proxies with ports/IPs/alive status. **Run first.** |
+| `borrowip_get_proxy(key?)` | `socks5://127.0.0.1:PORT` | Ready-to-use proxy URL. Use with browser tools. |
+| `borrowip_fetch(url, key?)` | HTML/text | Fetch a URL through mobile proxy. |
+| `borrowip_health_check(key?)` | `ALIVE`/`DEAD`/`STALE` | Fast 3s liveness test. Use when fetch fails. |
+| `borrowip_check_ip(key?)` | IP address | Phone's external cellular IP. |
+| `borrowip_list_proxies()` | Text | List all proxies with details. |
 
 ## Architecture
 

@@ -60,10 +60,21 @@ class ProxyPool:
             return json.loads(f.read_text())
         return None
 
-    def get_any(self) -> dict | None:
-        """Get any available client (first found)."""
+    def get_any(self, prefer_alive: bool = True) -> dict | None:
+        """Get any available client (first found).
+        
+        If prefer_alive, tries to return one whose SOCKS port is actually open.
+        """
         clients = self.list_all()
-        return clients[0] if clients else None
+        if not clients:
+            return None
+        if prefer_alive:
+            from ..server.fetcher import check_proxy_alive
+            for c in clients:
+                if check_proxy_alive(c["socks_port"]):
+                    return c
+            # All dead — return first anyway (caller will handle error)
+        return clients[0]
 
     def list_all(self) -> list[dict]:
         """List all registered clients."""
